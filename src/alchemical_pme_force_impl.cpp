@@ -1,6 +1,7 @@
 #include "openmm/internal/AlchemicalPMEForceImpl.h"
 
 #include "openmm/internal/AlchemicalPMEKernels.h"
+#include "openmm/internal/ColvarsKernels.h"
 #include "openmm/internal/ContextImpl.h"
 
 #include <cstdint>
@@ -20,7 +21,7 @@ const AlchemicalPMEForce& AlchemicalPMEForceImpl::getOwner() const
 
 void AlchemicalPMEForceImpl::initialize(ContextImpl& context)
 {
-    registerAlchemicalPMEKernelFactories();
+    registerColvarsKernelFactories();
     kernel_ = context.getPlatform().createKernel(CalcAlchemicalPMEForceKernel::Name(), context);
     kernel_.getAs<CalcAlchemicalPMEForceKernel>().initialize(context, owner_);
 }
@@ -51,6 +52,6 @@ std::map<std::string, double> AlchemicalPMEForceImpl::getDefaultParameters()
 
 std::vector<std::string> AlchemicalPMEForceImpl::getKernelNames()
 {
-    registerAlchemicalPMEKernelFactories();
+    registerColvarsKernelFactories();
     return {CalcAlchemicalPMEForceKernel::Name()};
 }

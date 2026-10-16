@@ -12,7 +12,6 @@
 #include <cmath>
 #include <limits>
 #include <map>
-#include <mutex>
 #include <set>
 #include <utility>
 #include <vector>
@@ -330,23 +329,10 @@ public:
     }
 };
 
-std::mutex registerFactoriesMutex;
-
 } // namespace
 
-void OpenMM::registerAlchemicalPMEKernelFactories()
+void OpenMM::registerReferenceAlchemicalPMEKernelFactory(Platform& platform)
 {
-    std::lock_guard<std::mutex> lock(registerFactoriesMutex);
-    for (int i = 0; i < Platform::getNumPlatforms(); ++i) {
-        Platform& platform = Platform::getPlatform(i);
-        if ((platform.getName() == "Reference" || platform.getName() == "CPU") &&
-            !platform.supportsKernels({CalcAlchemicalPMEForceKernel::Name()})) {
-            platform.registerKernelFactory(CalcAlchemicalPMEForceKernel::Name(),
-                                           new ReferenceAlchemicalPMEKernelFactory());
-        }
-        if (platform.getName() == "CUDA" &&
-            !platform.supportsKernels({CalcAlchemicalPMEForceKernel::Name()})) {
-            registerCudaAlchemicalPMEKernelFactory(platform);
-        }
-    }
+    platform.registerKernelFactory(CalcAlchemicalPMEForceKernel::Name(),
+                                   new ReferenceAlchemicalPMEKernelFactory());
 }

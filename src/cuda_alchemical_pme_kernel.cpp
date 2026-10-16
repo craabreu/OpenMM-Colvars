@@ -1532,26 +1532,6 @@ private:
     }
 };
 
-#else
-
-class CudaCalcAlchemicalPMEForceKernel final : public CalcAlchemicalPMEForceKernel {
-public:
-    CudaCalcAlchemicalPMEForceKernel(std::string name, const Platform& platform)
-        : CalcAlchemicalPMEForceKernel(name, platform) {
-    }
-
-    void initialize(ContextImpl& context, const AlchemicalPMEForce& force) override {
-        throw OpenMMException(
-            "CUDA AlchemicalPMEForce kernel was not built. Reconfigure with "
-            "-DOPENMM_COLVARS_ENABLE_CUDA_KERNELS=ON and provide OpenMM CUDA "
-            "internal headers.");
-    }
-
-    double execute(ContextImpl& context, bool includeForces, bool includeEnergy) override {
-        throw OpenMMException("CUDA AlchemicalPMEForce kernel was not built");
-    }
-};
-
 #endif
 
 class CudaAlchemicalPMEKernelFactory final : public KernelFactory {

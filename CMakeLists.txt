@@ -8,6 +8,9 @@ option(OPENMM_COLVARS_BUILD_PYTHON "Build Python bindings for OpenMM-Colvars" ON
 option(OPENMM_COLVARS_ENABLE_CUDA_KERNELS
     "Build CUDA-platform host/device kernels for AlchemicalPMEForce when OpenMM CUDA internal headers are available"
     OFF)
+option(OPENMM_COLVARS_CUDA_PLUGIN
+    "Build OpenMMColvars as a shared library and the CUDA kernels as a separate OpenMM plugin (OpenMMColvarsCUDA), as in the PyPI wheels"
+    OFF)
 option(OPENMM_COLVARS_FORCE_DISABLE_TABF_ALPHA
     "Build without TABF proxy hooks even if the Colvars source tree provides them"
     OFF)
@@ -322,13 +325,13 @@ if (NOT OPENMM_COLVARS_REFERENCE_PME_SOURCES AND
         "openmm/reference/ReferencePME.h.")
 endif()
 
-add_library(OpenMMColvars STATIC
+set(OPENMM_COLVARS_CORE_SOURCES
     src/alchemical_pme_force.cpp
     src/alchemical_pme_force_impl.cpp
-    src/cuda_alchemical_pme_kernel.cpp
     src/reference_alchemical_pme_kernel.cpp
     src/colvars_force.cpp
     src/colvars_force_impl.cpp
+    src/colvars_kernel_factories.cpp
     src/colvars_tabf_integrator.cpp
     src/colvarproxy_tcl_stub.cpp
     src/colvarscript_stub.cpp
@@ -336,6 +339,23 @@ add_library(OpenMMColvars STATIC
     ${OPENMM_COLVARS_REFERENCE_PME_SOURCES}
     ${OPENMM_COLVARS_LEPTON_OBJECTS}
     ${COLVARS_SOURCES})
+set(OPENMM_COLVARS_CUDA_SOURCES
+    src/cuda_alchemical_pme_kernel.cpp
+    src/cuda_colvars_kernel.cpp)
+
+# In the plugin layout, the CUDA kernels live in the OpenMMColvarsCUDA plugin instead
+set(OPENMM_COLVARS_CORE_CUDA_INCLUDES)
+set(OPENMM_COLVARS_CORE_CUDA_DEFINITIONS)
+if (OPENMM_COLVARS_CUDA_PLUGIN)
+    add_library(OpenMMColvars SHARED ${OPENMM_COLVARS_CORE_SOURCES})
+else()
+    add_library(OpenMMColvars STATIC ${OPENMM_COLVARS_CORE_SOURCES})
+    if (OPENMM_COLVARS_ENABLE_CUDA_KERNELS)
+        target_sources(OpenMMColvars PRIVATE ${OPENMM_COLVARS_CUDA_SOURCES})
+        set(OPENMM_COLVARS_CORE_CUDA_INCLUDES ${OPENMM_COLVARS_CUDA_INCLUDES})
+        set(OPENMM_COLVARS_CORE_CUDA_DEFINITIONS ${OPENMM_COLVARS_CUDA_DEFINITIONS})
+    endif()
+endif()
 
 set_target_properties(OpenMMColvars PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
@@ -343,7 +363,7 @@ target_include_directories(OpenMMColvars
     PUBLIC
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
         ${OPENMM_COLVARS_OPENMM_SOURCE_INCLUDES}
-        ${OPENMM_COLVARS_CUDA_INCLUDES}
+        ${OPENMM_COLVARS_CORE_CUDA_INCLUDES}
     PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/src"
         "${COLVARS_CORE_DIR}"
@@ -351,13 +371,13 @@ target_include_directories(OpenMMColvars
 
 target_link_libraries(OpenMMColvars PUBLIC OpenMM::OpenMM)
 target_link_libraries(OpenMMColvars PRIVATE ${OPENMM_COLVARS_LEPTON_LIBRARIES})
-if (OPENMM_COLVARS_ENABLE_CUDA_KERNELS)
+if (OPENMM_COLVARS_ENABLE_CUDA_KERNELS AND NOT OPENMM_COLVARS_CUDA_PLUGIN)
     target_link_libraries(OpenMMColvars PRIVATE "${OPENMM_CUDA_LIBRARY}")
 endif()
 
 target_compile_definitions(OpenMMColvars
     PUBLIC ${OPENMM_COLVARS_OPENMM_DEFINITIONS}
-    PRIVATE COLVARS_DISABLE_TCL LEPTON ${OPENMM_COLVARS_CUDA_DEFINITIONS})
+    PRIVATE COLVARS_DISABLE_TCL LEPTON ${OPENMM_COLVARS_CORE_CUDA_DEFINITIONS})
 if (OPENMM_COLVARS_HAS_TABF_ALPHA)
     target_compile_definitions(OpenMMColvars PRIVATE OPENMM_COLVARS_HAS_TABF_ALPHA=1)
 endif()
@@ -369,6 +389,31 @@ if (TARGET OpenMMColvarsLepton)
 endif()
 if (MSVC)
     target_compile_options(OpenMMColvars PRIVATE /FS)
+endif()
+
+if (OPENMM_COLVARS_CUDA_PLUGIN)
+    # OpenMM loads every library in lib/plugins; the core library goes next to it, in lib
+    set(CMAKE_INSTALL_RPATH_USE_LINK_PATH ON)
+    set_target_properties(OpenMMColvars PROPERTIES INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/lib")
+    install(TARGETS OpenMMColvars
+        LIBRARY DESTINATION lib
+        RUNTIME DESTINATION lib
+        ARCHIVE DESTINATION lib)
+    if (OPENMM_COLVARS_ENABLE_CUDA_KERNELS)
+        add_library(OpenMMColvarsCUDA SHARED ${OPENMM_COLVARS_CUDA_SOURCES})
+        target_include_directories(OpenMMColvarsCUDA
+            PRIVATE
+                "${CMAKE_CURRENT_SOURCE_DIR}/src"
+                ${OPENMM_COLVARS_CUDA_INCLUDES})
+        target_compile_definitions(OpenMMColvarsCUDA
+            PRIVATE ${OPENMM_COLVARS_CUDA_DEFINITIONS} OPENMM_COLVARS_BUILDING_CUDA_PLUGIN)
+        target_link_libraries(OpenMMColvarsCUDA PRIVATE OpenMMColvars "${OPENMM_CUDA_LIBRARY}")
+        set_target_properties(OpenMMColvarsCUDA PROPERTIES
+            INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/lib;${CMAKE_INSTALL_PREFIX}/lib/plugins")
+        install(TARGETS OpenMMColvarsCUDA
+            LIBRARY DESTINATION lib/plugins
+            RUNTIME DESTINATION lib/plugins)
+    endif()
 endif()
 
 if (OPENMM_COLVARS_BUILD_PYTHON)
@@ -447,6 +492,9 @@ if (OPENMM_COLVARS_BUILD_PYTHON)
                 "${OPENMM_COLVARS_PYTHON_DIR}")
         target_link_libraries(_openmm_colvars PRIVATE OpenMMColvars Python::Module)
         target_compile_definitions(_openmm_colvars PRIVATE ${OPENMM_COLVARS_OPENMM_DEFINITIONS})
+        if (OPENMM_COLVARS_CUDA_PLUGIN)
+            set_target_properties(_openmm_colvars PROPERTIES INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/lib")
+        endif()
 
         add_custom_target(OpenMMColvarsPython ALL
             DEPENDS _openmm_colvars "${OPENMM_COLVARS_PYTHON_SHADOW}")
