@@ -12,6 +12,7 @@ deferred device path for ABF-family total-force sampling.
 
 - [Features](#features)
 - [Platform support](#platform-support)
+- [Installation from PyPI](#installation-from-pypi)
 - [Requirements](#requirements)
 - [Installation in an existing conda environment](#installation-in-an-existing-conda-environment)
 - [Quick verification](#quick-verification)
@@ -50,6 +51,22 @@ the same OpenMM installation.
 Ordinary geometry biases do not require the deferred CUDA path. On platforms
 without that path, use force groups 0-30 for `ColvarsForce`; force group 31 is
 not supported by the upstream `CustomCPPForceImpl`.
+
+## Installation from PyPI
+
+Wheels for Linux x86_64 and macOS (arm64 and x86_64) work with the `openmm` package from
+PyPI:
+
+```bash
+pip install openmm-colvars           # Reference, CPU, OpenCL and CUDA geometry biases
+pip install "openmm-colvars[cuda12]" # also the CUDA kernels, on Linux with CUDA 12
+pip install "openmm-colvars[cuda13]" # also the CUDA kernels, on Linux with CUDA 13
+```
+
+The CUDA extras install OpenMM's CUDA platform and the CUDA kernels of OpenMM-Colvars,
+which ABF/eABF total forces and `AlchemicalPMEForce` need on CUDA. pip selects the release
+built for the installed OpenMM version. See [devtools/wheels](devtools/wheels/README.md) for
+how the wheels are built and published.
 
 ## Requirements
 
@@ -224,6 +241,12 @@ cmake --install build
 
 Change `OPENMM_COLVARS_ENABLE_CUDA_KERNELS` to `ON` and provide the CUDA library
 and include directory described above for a CUDA ABF/eABF build.
+
+With `-DOPENMM_COLVARS_CUDA_PLUGIN=ON`, `OpenMMColvars` becomes a shared library
+installed into `$CMAKE_INSTALL_PREFIX/lib`, and the CUDA kernels (when enabled) go into a
+separate OpenMM plugin, `libOpenMMColvarsCUDA`, installed into
+`$CMAKE_INSTALL_PREFIX/lib/plugins`. This is how the PyPI wheels are built. For a conda
+environment, use `-DCMAKE_INSTALL_PREFIX="$CONDA_PREFIX"`, so that OpenMM finds the plugin.
 
 ## Usage
 

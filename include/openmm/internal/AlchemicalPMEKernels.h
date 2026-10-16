@@ -22,7 +22,7 @@ public:
     virtual double execute(ContextImpl& context, bool includeForces, bool includeEnergy) = 0;
 };
 
-void registerAlchemicalPMEKernelFactories();
+void registerReferenceAlchemicalPMEKernelFactory(Platform& platform);
 void registerCudaAlchemicalPMEKernelFactory(Platform& platform);
 
 } // namespace OpenMM

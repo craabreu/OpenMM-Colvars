@@ -2,6 +2,7 @@
 #define OPENMM_INTERNAL_COLVARS_FORCE_IMPL_H
 
 #include "openmm/ColvarsForce.h"
+#include "openmm/Kernel.h"
 #include "openmm/internal/CustomCPPForceImpl.h"
 
 #include <memory>
@@ -31,6 +32,7 @@ public:
 private:
     const ColvarsForce& owner_;
     std::unique_ptr<OpenMMColvarProxy> proxy_;
+    Kernel deferredKernel_;
     bool usesDeferredCudaComputation_;
 };
 
