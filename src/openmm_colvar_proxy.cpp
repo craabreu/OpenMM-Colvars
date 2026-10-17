@@ -10,6 +10,7 @@
 #include "openmm/System.h"
 #include "openmm/internal/ContextImpl.h"
 
+#include "colvar.h"
 #include "colvaratoms.h"
 #include "colvarmodule.h"
 #include "colvars_version.h"
@@ -389,9 +390,13 @@ bool config_tabf_alpha_boundaries(const std::string& configText,
 
 } // namespace
 
-OpenMMColvarProxy::OpenMMColvarProxy(const ColvarsForce& owner, const System& system)
+OpenMMColvarProxy::OpenMMColvarProxy(const ColvarsForce& owner,
+                                     const System& system,
+                                     const std::string& reportedColvar)
     : owner_(owner),
       system_(system),
+      reportedColvarName_(reportedColvar),
+      reportedColvar_(nullptr),
       currentContext_(nullptr),
       biasEnergyKcalPerMol_(0.0),
       isInitialized_(false),
@@ -434,11 +439,21 @@ OpenMMColvarProxy::OpenMMColvarProxy(const ColvarsForce& owner, const System& sy
     updated_charges_ = true;
 
     cvmodule = new colvarmodule(this);
+    if (!reportedColvarName_.empty()) {
+        // Lets every colvar receive forces and makes Colvars call run_force_callback()
+        cvmodule->use_scripted_forces = true;
+    }
     cvmodule->log("Using OpenMM interface.\n");
     totalForcesSameStep_ = inferTotalForcesSameStep();
 
-    colvarproxy_io::set_output_prefix(owner_.getOutputPrefix());
-    colvarproxy_io::set_restart_output_prefix(owner_.getRestartOutputPrefix());
+    if (reportedColvarName_.empty()) {
+        colvarproxy_io::set_output_prefix(owner_.getOutputPrefix());
+        colvarproxy_io::set_restart_output_prefix(owner_.getRestartOutputPrefix());
+    } else {
+        // Without output prefixes, Colvars writes no trajectory or restart files
+        colvarproxy_io::set_output_prefix("");
+        colvarproxy_io::set_restart_output_prefix("");
+    }
     if (!owner_.getRestartInputPrefix().empty()) {
         colvarproxy_io::set_input_prefix(owner_.getRestartInputPrefix());
     }
@@ -451,6 +466,32 @@ OpenMMColvarProxy::OpenMMColvarProxy(const ColvarsForce& owner, const System& sy
     }
 
     initializeColvars();
+    if (!reportedColvarName_.empty()) {
+        validateReportedColvar();
+    }
+}
+
+void OpenMMColvarProxy::validateReportedColvar()
+{
+    const std::string prefix = "ColvarsCollectiveVariable: ";
+    reportedColvar_ = cvmodule->colvar_by_name(reportedColvarName_);
+    if (reportedColvar_ == nullptr) {
+        throw OpenMMException(prefix + "the configuration does not define a colvar named \"" +
+                              reportedColvarName_ + "\"");
+    }
+    if (cvmodule->num_biases() > 0) {
+        throw OpenMMException(prefix + "the configuration must not define biases");
+    }
+    if (reportedColvar_->value().type() != colvarvalue::type_scalar) {
+        throw OpenMMException(prefix + "colvar \"" + reportedColvarName_ + "\" is not a scalar");
+    }
+    if (reportedColvar_->is_enabled(colvardeps::f_cv_extended_Lagrangian)) {
+        throw OpenMMException(prefix + "colvar \"" + reportedColvarName_ +
+                              "\" must not have an extended Lagrangian");
+    }
+    if (!cvmodule->scripted_forces()) {
+        throw OpenMMException(prefix + "the configuration must not set scriptedColvarForces off");
+    }
 }
 
 OpenMMColvarProxy::~OpenMMColvarProxy()
@@ -934,6 +975,14 @@ int OpenMMColvarProxy::replica_comm_send(char*, int, int)
 
 int OpenMMColvarProxy::run_force_callback()
 {
+    if (reportedColvar_ != nullptr) {
+        // Energy x and generalized force -1 on the colvar, in kJ/mol per colvar
+        // unit, converted to the Colvars energy unit; the proxy converts back
+        const cvm::real scale = colvars_units::kj_per_mol_to_kcal_per_mol(1.0);
+        add_energy(scale * reportedColvar_->value().real_value);
+        reportedColvar_->add_bias_force(colvarvalue(-scale));
+        return COLVARS_OK;
+    }
     return cvmodule->error("Error: scripted Colvars forces are not supported by the OpenMM v1 interface.\n",
                            COLVARS_NOT_IMPLEMENTED);
 }
