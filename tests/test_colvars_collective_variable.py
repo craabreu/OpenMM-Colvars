@@ -235,6 +235,35 @@ def test_inside_a_custom_cv_force(platform):
     assert values == pytest.approx(expected.getCollectiveVariableValues(context))
 
 
+def test_several_collective_variables_in_one_force():
+    # Every instance owns its own Colvars module, so two of them must not interfere
+    def torsion_cv(name, first):
+        groups = "".join(
+            f"    group{k + 1} {{ atomNumbers {atoms(first + k)} }}\n" for k in range(4)
+        )
+        component = "dihedral {\n    name t\n" + groups + "  }"
+        config = colvar_config(name, component, "  customFunction t*0.017453292519943295\n")
+        return ColvarsCollectiveVariable(config, name)
+
+    def torsion_reference(first):
+        force = openmm.CustomTorsionForce("theta")
+        force.addTorsion(first, first + 1, first + 2, first + 3, [])
+        return force
+
+    expression = "phi^2 + 2*psi^2"
+    colvars = openmm.CustomCVForce(expression)
+    expected = openmm.CustomCVForce(expression)
+    for name, first in [("phi", 0), ("psi", 1)]:
+        colvars.addCollectiveVariable(name, torsion_cv(name, first))
+        expected.addCollectiveVariable(name, torsion_reference(first))
+    positions = make_positions(5, 4)
+    context = make_context(make_system(5, colvars, expected), positions)
+    energy, forces = energy_and_forces(context, 0)
+    expected_energy, expected_forces = energy_and_forces(context, 1)
+    assert energy == pytest.approx(expected_energy, rel=1e-6)
+    assert forces == pytest.approx(expected_forces, rel=1e-5, abs=1e-6)
+
+
 @pytest.mark.parametrize(
     "config, name, message",
     [
