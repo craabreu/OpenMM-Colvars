@@ -24,6 +24,8 @@ deferred device path for ABF-family total-force sampling.
 
 - Geometry-based Colvars operating on OpenMM particle positions.
 - Colvars bias energies and forces applied back to OpenMM.
+- `ColvarsCollectiveVariable`, a serializable force whose energy is a colvar's
+  value, for use inside `CustomCVForce` and other OpenMM tools.
 - ABF-family total-force collection.
 - TABF `tabfAlpha` communication when supported by the selected Colvars source.
 - `ColvarsTABFIntegrator` for OpenMM-side `U/alpha` dynamics.
@@ -366,6 +368,56 @@ When combining `alchLambda` with TABF, call
 `setScaleLambdaDerivativeByTabfAlpha(true)` so the proxy returns
 `dU/dlambda / alpha`.
 
+### Colvars as collective variables of other forces
+
+`ColvarsCollectiveVariable` turns one colvar into an OpenMM force: its energy is
+the colvar's value times `valueScale`, and its forces are minus the gradient of
+that energy. Unlike `ColvarsForce`, it can be serialized, so it can be a
+collective variable of a `CustomCVForce` and can be copied, pickled, or saved in
+a serialized `System`. This makes Colvars components available to OpenMM tools
+built on `CustomCVForce`.
+
+```python
+import math
+
+import openmm
+from openmm_colvars import ColvarsCollectiveVariable
+
+config = """
+colvar {
+  name phi
+  dihedral {
+    group1 { atomNumbers 5 }
+    group2 { atomNumbers 7 }
+    group3 { atomNumbers 9 }
+    group4 { atomNumbers 15 }
+  }
+}
+"""
+
+# Colvars reports angles in degrees; scale the value to radians
+phi = ColvarsCollectiveVariable(config, "phi", math.pi / 180)
+
+restraint = openmm.CustomCVForce(
+    "0.5*k*dphi^2; dphi = phi - phi0 - 2*pi*floor((phi - phi0)/(2*pi) + 0.5)"
+)
+restraint.addGlobalParameter("k", 100.0)
+restraint.addGlobalParameter("phi0", -1.2)
+restraint.addGlobalParameter("pi", math.pi)
+restraint.addCollectiveVariable("phi", phi)
+```
+
+Use `valueScale` to convert from Colvars units, for example `0.1` for a length
+in nm or `pi/180` for an angle in radians. The value of a periodic colvar is
+reported wrapped into its period, as Colvars computes it, so the force using it
+must account for the periodicity.
+
+The configuration may define other colvars, for example as components of a
+`customFunction`, but it must not define biases, and the reported colvar must be
+a scalar without an extended Lagrangian. `ColvarsCollectiveVariable` writes no
+Colvars output files. Add `logLevel 0` to the configuration to silence most of
+the Colvars log.
+
 ## OpenMM FEP helpers
 
 The included `openmm_fep` package builds and runs dual-topology FEP windows with
@@ -438,6 +490,10 @@ conditions. Use `PbcMode::Enabled` or `PbcMode::Disabled` to override this.
 ## Limitations
 
 - Scripted Colvars functions and scripted forces are not supported.
+- `ColvarsForce`, `AlchemicalPMEForce`, and `ColvarsTABFIntegrator` cannot be
+  serialized, so they cannot be used inside a `CustomCVForce`, copied, or saved
+  in a serialized `System`. Use `ColvarsCollectiveVariable` for colvars that
+  other forces depend on.
 - Multiple-replica communication is not supported.
 - Volumetric map variables and GPU-resident Colvars kernels are not supported.
 - OpenCL, HIP, and CUDA builds without the deferred CUDA path cannot perform

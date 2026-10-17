@@ -327,6 +327,7 @@ add_library(OpenMMColvars STATIC
     src/alchemical_pme_force_impl.cpp
     src/cuda_alchemical_pme_kernel.cpp
     src/reference_alchemical_pme_kernel.cpp
+    src/colvars_collective_variable.cpp
     src/colvars_force.cpp
     src/colvars_force_impl.cpp
     src/colvars_tabf_integrator.cpp
@@ -429,6 +430,7 @@ if (OPENMM_COLVARS_BUILD_PYTHON)
             DEPENDS
                 "${CMAKE_CURRENT_SOURCE_DIR}/python/openmm_colvars.i"
                 "${CMAKE_CURRENT_SOURCE_DIR}/python/openmm_colvars_openmm_import.i"
+                "${CMAKE_CURRENT_SOURCE_DIR}/include/openmm/ColvarsCollectiveVariable.h"
                 "${CMAKE_CURRENT_SOURCE_DIR}/include/openmm/ColvarsForce.h"
                 "${CMAKE_CURRENT_SOURCE_DIR}/include/openmm/ColvarsTABFIntegrator.h"
                 "${CMAKE_CURRENT_SOURCE_DIR}/include/openmm/AlchemicalPMEForce.h"
