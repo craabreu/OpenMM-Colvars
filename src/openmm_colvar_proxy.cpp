@@ -441,6 +441,10 @@ OpenMMColvarProxy::OpenMMColvarProxy(const ColvarsForce& owner,
     updated_charges_ = true;
 
     cvmodule = new colvarmodule(this);
+    if (!reportedColvarName_.empty()) {
+        // Lets every colvar receive forces and makes Colvars call run_force_callback()
+        cvmodule->use_scripted_forces = true;
+    }
     cvmodule->log("Using OpenMM interface.\n");
     totalForcesSameStep_ = inferTotalForcesSameStep();
 
@@ -487,9 +491,8 @@ void OpenMMColvarProxy::validateReportedColvar()
         throw OpenMMException(prefix + "colvar \"" + reportedColvarName_ +
                               "\" must not have an extended Lagrangian");
     }
-    if (!reportedColvar_->is_enabled(colvardeps::f_cv_apply_force)) {
-        throw OpenMMException(prefix + "forces cannot be applied to colvar \"" +
-                              reportedColvarName_ + "\"");
+    if (!cvmodule->scripted_forces()) {
+        throw OpenMMException(prefix + "the configuration must not set scriptedColvarForces off");
     }
 }
 

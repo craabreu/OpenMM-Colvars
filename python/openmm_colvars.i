@@ -218,19 +218,11 @@ public:
     ColvarsCollectiveVariable(const ColvarsCollectiveVariable& other);
 
     const std::string& getConfigString() const;
-    void setConfigString(const std::string& configString);
-
     const std::string& getColvarName() const;
-    void setColvarName(const std::string& colvarName);
-
     double getValueScale() const;
-    void setValueScale(double valueScale);
 
     bool usesPeriodicBoundaryConditions() const;
     void setUsesPeriodicBoundaryConditions(bool usesPbc);
-
-    OpenMM::ColvarsForce::PbcMode getPbcMode() const;
-    void setPbcMode(OpenMM::ColvarsForce::PbcMode mode);
 };
 
 %newobject OpenMM::ColvarsCollectiveVariable::_deserialize;

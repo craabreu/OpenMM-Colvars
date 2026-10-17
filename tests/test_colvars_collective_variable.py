@@ -167,23 +167,20 @@ def test_orientation_angle_forces_are_minus_gradient(platform):
         assert derivative == pytest.approx(-np.sum(forces * direction), rel=1e-4)
 
 
-def test_getters_and_setters():
+def test_getters_and_validation():
     cv = ColvarsCollectiveVariable(colvar_config("d", DISTANCE), "d", 2.0)
     assert cv.getConfigString() == colvar_config("d", DISTANCE)
     assert cv.getColvarName() == "d"
     assert cv.getValueScale() == 2.0
-    assert cv.getPbcMode() == ColvarsForce.PbcMode_Auto
     assert not cv.usesPeriodicBoundaryConditions()
     cv.setUsesPeriodicBoundaryConditions(True)
-    assert cv.getPbcMode() == ColvarsForce.PbcMode_Enabled
     assert cv.usesPeriodicBoundaryConditions()
-    cv.setValueScale(0.5)
-    cv.setColvarName("x")
-    assert (cv.getValueScale(), cv.getColvarName()) == (0.5, "x")
+    with pytest.raises(openmm.OpenMMException, match="configString"):
+        ColvarsCollectiveVariable("", "d")
     with pytest.raises(openmm.OpenMMException, match="colvarName"):
-        cv.setColvarName("")
+        ColvarsCollectiveVariable(colvar_config("d", DISTANCE), "")
     with pytest.raises(openmm.OpenMMException, match="finite"):
-        cv.setValueScale(float("nan"))
+        ColvarsCollectiveVariable(colvar_config("d", DISTANCE), "d", float("nan"))
 
 
 def assert_same_settings(copy_, original):
@@ -191,7 +188,7 @@ def assert_same_settings(copy_, original):
     assert copy_.getConfigString() == original.getConfigString()
     assert copy_.getColvarName() == original.getColvarName()
     assert copy_.getValueScale() == original.getValueScale()
-    assert copy_.getPbcMode() == original.getPbcMode()
+    assert copy_.usesPeriodicBoundaryConditions() == original.usesPeriodicBoundaryConditions()
     assert copy_.getForceGroup() == original.getForceGroup()
     assert copy_.getName() == original.getName()
 
@@ -202,7 +199,7 @@ def configured_cv():
     )
     cv.setForceGroup(7)
     cv.setName("phi_colvars")
-    cv.setUsesPeriodicBoundaryConditions(False)
+    cv.setUsesPeriodicBoundaryConditions(True)
     return cv
 
 
@@ -302,13 +299,24 @@ def test_inside_a_custom_cv_force(platform):
             "v",
             "not a scalar",
         ),
+        (
+            "scriptedColvarForces off\n" + colvar_config("d", DISTANCE),
+            "d",
+            "scriptedColvarForces",
+        ),
     ],
-    ids=["unknown-colvar", "bias", "extended-Lagrangian", "vector"],
+    ids=["unknown-colvar", "bias", "extended-Lagrangian", "vector", "scripted-forces-off"],
 )
 def test_invalid_configurations_are_rejected(config, name, message):
     cv = ColvarsCollectiveVariable(config, name)
     with pytest.raises(openmm.OpenMMException, match=message):
         make_context(make_system(2, cv), make_positions(2))
+
+
+def test_explicit_scripted_forces_keyword_is_accepted():
+    cv = ColvarsCollectiveVariable("scriptedColvarForces on\n" + colvar_config("d", DISTANCE), "d")
+    energy, _ = energy_and_forces(make_context(make_system(2, cv), make_positions(2)), 0)
+    assert energy > 0
 
 
 def test_writes_no_files(tmp_path, monkeypatch):

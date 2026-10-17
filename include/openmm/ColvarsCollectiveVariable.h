@@ -1,7 +1,6 @@
 #ifndef OPENMM_COLVARS_COLLECTIVE_VARIABLE_H
 #define OPENMM_COLVARS_COLLECTIVE_VARIABLE_H
 
-#include "openmm/ColvarsForce.h"
 #include "openmm/Force.h"
 
 #include <string>
@@ -33,19 +32,11 @@ public:
                               double valueScale = 1.0);
 
     const std::string& getConfigString() const;
-    void setConfigString(const std::string& configString);
-
     const std::string& getColvarName() const;
-    void setColvarName(const std::string& colvarName);
-
     double getValueScale() const;
-    void setValueScale(double valueScale);
 
     bool usesPeriodicBoundaryConditions() const override;
     void setUsesPeriodicBoundaryConditions(bool usesPbc);
-
-    ColvarsForce::PbcMode getPbcMode() const;
-    void setPbcMode(ColvarsForce::PbcMode mode);
 
 protected:
     ForceImpl* createImpl() const override;
@@ -54,7 +45,7 @@ private:
     std::string configString_;
     std::string colvarName_;
     double valueScale_;
-    ColvarsForce::PbcMode pbcMode_;
+    bool usesPbc_;
 };
 
 } // namespace OpenMM

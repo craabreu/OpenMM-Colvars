@@ -8,7 +8,6 @@
 #include "openmm/serialization/SerializationProxy.h"
 
 #include <algorithm>
-#include <cctype>
 #include <cmath>
 #include <typeinfo>
 
@@ -23,33 +22,13 @@ void validate_nonempty(const std::string& value, const std::string& name)
     }
 }
 
-std::string to_lower(std::string text)
-{
-    std::transform(text.begin(), text.end(), text.begin(), [](unsigned char c) {
-        return static_cast<char>(std::tolower(c));
-    });
-    return text;
-}
-
-// The colvar receives its generalized force through the scripted-forces hook of
-// Colvars, which the proxy implements. Colvars rejects a repeated keyword, so the
-// keyword is added only if the configuration does not have it.
-std::string full_config(const std::string& configString)
-{
-    if (to_lower(configString).find("scriptedcolvarforces") != std::string::npos) {
-        return configString;
-    }
-    return configString + "\nscriptedColvarForces on\n";
-}
-
 ColvarsForce make_settings(const ColvarsCollectiveVariable& owner)
 {
     // The output prefix is required by ColvarsForce but unused: the proxy writes no
     // files when it reports a colvar
-    ColvarsForce settings = ColvarsForce::fromConfigString(
-        full_config(owner.getConfigString()), "colvars");
+    ColvarsForce settings = ColvarsForce::fromConfigString(owner.getConfigString(), "colvars");
     settings.setAlchemyEnabled(false);
-    settings.setPbcMode(owner.getPbcMode());
+    settings.setUsesPeriodicBoundaryConditions(owner.usesPeriodicBoundaryConditions());
     return settings;
 }
 
@@ -66,7 +45,7 @@ public:
         node.setStringProperty("configString", force.getConfigString());
         node.setStringProperty("colvarName", force.getColvarName());
         node.setDoubleProperty("valueScale", force.getValueScale());
-        node.setIntProperty("pbcMode", static_cast<int>(force.getPbcMode()));
+        node.setBoolProperty("usesPeriodic", force.usesPeriodicBoundaryConditions());
     }
 
     void* deserialize(const SerializationNode& node) const override
@@ -77,14 +56,9 @@ public:
         auto* force = new ColvarsCollectiveVariable(node.getStringProperty("configString"),
                                                     node.getStringProperty("colvarName"),
                                                     node.getDoubleProperty("valueScale"));
-        try {
-            force->setForceGroup(node.getIntProperty("forceGroup", 0));
-            force->setName(node.getStringProperty("name", force->getName()));
-            force->setPbcMode(static_cast<ColvarsForce::PbcMode>(node.getIntProperty("pbcMode")));
-        } catch (...) {
-            delete force;
-            throw;
-        }
+        force->setForceGroup(node.getIntProperty("forceGroup", 0));
+        force->setName(node.getStringProperty("name", force->getName()));
+        force->setUsesPeriodicBoundaryConditions(node.getBoolProperty("usesPeriodic", false));
         return force;
     }
 };
@@ -104,11 +78,13 @@ ColvarsCollectiveVariable::ColvarsCollectiveVariable(const std::string& configSt
     : configString_(configString),
       colvarName_(colvarName),
       valueScale_(valueScale),
-      pbcMode_(ColvarsForce::PbcMode::Auto)
+      usesPbc_(false)
 {
     validate_nonempty(configString_, "configString");
     validate_nonempty(colvarName_, "colvarName");
-    setValueScale(valueScale);
+    if (!std::isfinite(valueScale_)) {
+        throw OpenMMException("ColvarsCollectiveVariable: valueScale must be finite");
+    }
     setName("ColvarsCollectiveVariable");
 }
 
@@ -117,21 +93,9 @@ const std::string& ColvarsCollectiveVariable::getConfigString() const
     return configString_;
 }
 
-void ColvarsCollectiveVariable::setConfigString(const std::string& configString)
-{
-    validate_nonempty(configString, "configString");
-    configString_ = configString;
-}
-
 const std::string& ColvarsCollectiveVariable::getColvarName() const
 {
     return colvarName_;
-}
-
-void ColvarsCollectiveVariable::setColvarName(const std::string& colvarName)
-{
-    validate_nonempty(colvarName, "colvarName");
-    colvarName_ = colvarName;
 }
 
 double ColvarsCollectiveVariable::getValueScale() const
@@ -139,39 +103,14 @@ double ColvarsCollectiveVariable::getValueScale() const
     return valueScale_;
 }
 
-void ColvarsCollectiveVariable::setValueScale(double valueScale)
-{
-    if (!std::isfinite(valueScale)) {
-        throw OpenMMException("ColvarsCollectiveVariable: valueScale must be finite");
-    }
-    valueScale_ = valueScale;
-}
-
 bool ColvarsCollectiveVariable::usesPeriodicBoundaryConditions() const
 {
-    return pbcMode_ == ColvarsForce::PbcMode::Enabled;
+    return usesPbc_;
 }
 
 void ColvarsCollectiveVariable::setUsesPeriodicBoundaryConditions(bool usesPbc)
 {
-    pbcMode_ = usesPbc ? ColvarsForce::PbcMode::Enabled : ColvarsForce::PbcMode::Disabled;
-}
-
-ColvarsForce::PbcMode ColvarsCollectiveVariable::getPbcMode() const
-{
-    return pbcMode_;
-}
-
-void ColvarsCollectiveVariable::setPbcMode(ColvarsForce::PbcMode mode)
-{
-    switch (mode) {
-        case ColvarsForce::PbcMode::Auto:
-        case ColvarsForce::PbcMode::Enabled:
-        case ColvarsForce::PbcMode::Disabled:
-            pbcMode_ = mode;
-            return;
-    }
-    throw OpenMMException("Invalid ColvarsCollectiveVariable PBC mode");
+    usesPbc_ = usesPbc;
 }
 
 ForceImpl* ColvarsCollectiveVariable::createImpl() const
