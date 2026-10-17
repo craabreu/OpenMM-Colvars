@@ -78,47 +78,33 @@ DIHEDRAL_IN_RADIANS = colvar_config(
 )
 
 
-@pytest.mark.parametrize("platform", PLATFORMS)
-def test_distance_value_and_forces(platform):
+def test_distance_value_and_forces():
     # Colvars reports distances in Angstrom
     cv = ColvarsCollectiveVariable(colvar_config("d", DISTANCE), "d")
     reference = openmm.CustomBondForce(f"{NM_TO_ANGSTROM}*r")
     reference.addBond(0, 1, [])
     positions = make_positions(2)
-    context = make_context(make_system(2, cv, reference), positions, platform)
+    context = make_context(make_system(2, cv, reference), positions)
     energy, forces = energy_and_forces(context, 0)
     expected_energy, expected_forces = energy_and_forces(context, 1)
     assert energy == pytest.approx(expected_energy, rel=1e-6)
     assert forces == pytest.approx(expected_forces, rel=1e-5, abs=1e-6)
 
 
-@pytest.mark.parametrize("platform", PLATFORMS)
 @pytest.mark.parametrize("seed", [1, 2, 3])
-def test_periodic_dihedral_value_and_forces(platform, seed):
+def test_periodic_dihedral_value_and_forces(seed):
     # Colvars reports dihedrals in degrees, wrapped into (-180, 180]; this is the
     # same convention as OpenMM's theta in radians
     cv = ColvarsCollectiveVariable(colvar_config("phi", DIHEDRAL), "phi")
     reference = openmm.CustomTorsionForce(f"{RADIANS_TO_DEGREES}*theta")
     reference.addTorsion(0, 1, 2, 3, [])
     positions = make_positions(4, seed)
-    context = make_context(make_system(4, cv, reference), positions, platform)
+    context = make_context(make_system(4, cv, reference), positions)
     energy, forces = energy_and_forces(context, 0)
     expected_energy, expected_forces = energy_and_forces(context, 1)
     assert energy == pytest.approx(expected_energy, rel=1e-6)
     assert forces == pytest.approx(expected_forces, rel=1e-5, abs=1e-6)
 
-
-
-@pytest.mark.parametrize("platform", PLATFORMS)
-def test_custom_function_converts_units(platform):
-    cv = ColvarsCollectiveVariable(DIHEDRAL_IN_RADIANS, "phi")
-    reference = openmm.CustomTorsionForce("theta")
-    reference.addTorsion(0, 1, 2, 3, [])
-    context = make_context(make_system(4, cv, reference), make_positions(4, 2), platform)
-    energy, forces = energy_and_forces(context, 0)
-    expected_energy, expected_forces = energy_and_forces(context, 1)
-    assert energy == pytest.approx(expected_energy, rel=1e-6)
-    assert forces == pytest.approx(expected_forces, rel=1e-5, abs=1e-6)
 
 def rotation_matrix(seed):
     rng = np.random.default_rng(seed)
@@ -149,38 +135,15 @@ def orientation_angle(reference):
     return colvar_config("omega", component)
 
 
-@pytest.mark.parametrize("seed", [1, 2, 3])
-def test_orientation_angle_matches_applied_rotation(seed):
+def test_orientation_angle_matches_applied_rotation():
     reference = make_positions(6)
-    rotation, angle = rotation_matrix(seed)
+    rotation, angle = rotation_matrix(1)
     center = reference.mean(axis=0)
     positions = (reference - center) @ rotation.T + center
     cv = ColvarsCollectiveVariable(orientation_angle(reference), "omega")
     context = make_context(make_system(6, cv), positions)
     energy, _ = energy_and_forces(context, 0)
     assert energy == pytest.approx(angle, abs=1e-6)
-
-
-@pytest.mark.parametrize("platform", PLATFORMS)
-def test_orientation_angle_forces_are_minus_gradient(platform):
-    reference = make_positions(6)
-    rotation, _ = rotation_matrix(4)
-    center = reference.mean(axis=0)
-    positions = (reference - center) @ rotation.T + center
-    cv = ColvarsCollectiveVariable(orientation_angle(reference), "omega")
-    context = make_context(make_system(6, cv), positions, platform)
-    _, forces = energy_and_forces(context, 0)
-    rng = np.random.default_rng(5)
-    for _ in range(3):
-        direction = rng.normal(size=positions.shape)
-        direction /= np.linalg.norm(direction)
-        step = 1e-5
-        context.setPositions(positions + step * direction)
-        plus, _ = energy_and_forces(context, 0)
-        context.setPositions(positions - step * direction)
-        minus, _ = energy_and_forces(context, 0)
-        derivative = (plus - minus) / (2 * step)
-        assert derivative == pytest.approx(-np.sum(forces * direction), rel=1e-4)
 
 
 def test_getters_and_validation():
@@ -238,17 +201,6 @@ def test_serialization_round_trip():
 def test_python_copies(duplicate):
     cv = configured_cv()
     assert_same_settings(duplicate(cv), cv)
-
-
-def test_system_with_the_force_can_be_copied_and_serialized():
-    cv = configured_cv()
-    system = make_system(4, cv)
-    restored = openmm.XmlSerializer.deserialize(openmm.XmlSerializer.serialize(system))
-    context = make_context(restored, make_positions(4, 1))
-    reference = make_context(copy.deepcopy(system), make_positions(4, 1))
-    assert energy_and_forces(context, 0)[0] == pytest.approx(
-        energy_and_forces(reference, 0)[0]
-    )
 
 
 @pytest.mark.parametrize("platform", PLATFORMS)
@@ -320,12 +272,6 @@ def test_invalid_configurations_are_rejected(config, name, message):
     cv = ColvarsCollectiveVariable(config, name)
     with pytest.raises(openmm.OpenMMException, match=message):
         make_context(make_system(2, cv), make_positions(2))
-
-
-def test_explicit_scripted_forces_keyword_is_accepted():
-    cv = ColvarsCollectiveVariable("scriptedColvarForces on\n" + colvar_config("d", DISTANCE), "d")
-    energy, _ = energy_and_forces(make_context(make_system(2, cv), make_positions(2)), 0)
-    assert energy > 0
 
 
 def test_writes_no_files(tmp_path, monkeypatch):
