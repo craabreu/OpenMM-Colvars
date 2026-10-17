@@ -212,14 +212,11 @@ public:
 
 class ColvarsCollectiveVariable : public Force {
 public:
-    ColvarsCollectiveVariable(const std::string& configString,
-                              const std::string& colvarName,
-                              double valueScale = 1.0);
+    ColvarsCollectiveVariable(const std::string& configString, const std::string& colvarName);
     ColvarsCollectiveVariable(const ColvarsCollectiveVariable& other);
 
     const std::string& getConfigString() const;
     const std::string& getColvarName() const;
-    double getValueScale() const;
 
     bool usesPeriodicBoundaryConditions() const;
     void setUsesPeriodicBoundaryConditions(bool usesPbc);

@@ -11,8 +11,8 @@ import pytest
 from openmm_colvars import ColvarsCollectiveVariable, ColvarsForce
 
 PLATFORMS = ["Reference", "CPU"]
-DEGREES_TO_RADIANS = math.pi / 180
-ANGSTROM_TO_NM = 0.1
+RADIANS_TO_DEGREES = 180 / math.pi
+NM_TO_ANGSTROM = 10.0
 
 
 def make_positions(num_particles, seed=0):
@@ -70,11 +70,19 @@ DIHEDRAL = (
     + "  }"
 )
 
+# A customFunction converts the dihedral from degrees to radians
+DIHEDRAL_IN_RADIANS = colvar_config(
+    "phi",
+    DIHEDRAL.replace("dihedral {\n", "dihedral {\n    name t\n", 1),
+    "  customFunction t*0.017453292519943295\n",
+)
+
 
 @pytest.mark.parametrize("platform", PLATFORMS)
 def test_distance_value_and_forces(platform):
-    cv = ColvarsCollectiveVariable(colvar_config("d", DISTANCE), "d", ANGSTROM_TO_NM)
-    reference = openmm.CustomBondForce("r")
+    # Colvars reports distances in Angstrom
+    cv = ColvarsCollectiveVariable(colvar_config("d", DISTANCE), "d")
+    reference = openmm.CustomBondForce(f"{NM_TO_ANGSTROM}*r")
     reference.addBond(0, 1, [])
     positions = make_positions(2)
     context = make_context(make_system(2, cv, reference), positions, platform)
@@ -89,10 +97,8 @@ def test_distance_value_and_forces(platform):
 def test_periodic_dihedral_value_and_forces(platform, seed):
     # Colvars reports dihedrals in degrees, wrapped into (-180, 180]; this is the
     # same convention as OpenMM's theta in radians
-    cv = ColvarsCollectiveVariable(
-        colvar_config("phi", DIHEDRAL), "phi", DEGREES_TO_RADIANS
-    )
-    reference = openmm.CustomTorsionForce("theta")
+    cv = ColvarsCollectiveVariable(colvar_config("phi", DIHEDRAL), "phi")
+    reference = openmm.CustomTorsionForce(f"{RADIANS_TO_DEGREES}*theta")
     reference.addTorsion(0, 1, 2, 3, [])
     positions = make_positions(4, seed)
     context = make_context(make_system(4, cv, reference), positions, platform)
@@ -101,6 +107,18 @@ def test_periodic_dihedral_value_and_forces(platform, seed):
     assert energy == pytest.approx(expected_energy, rel=1e-6)
     assert forces == pytest.approx(expected_forces, rel=1e-5, abs=1e-6)
 
+
+
+@pytest.mark.parametrize("platform", PLATFORMS)
+def test_custom_function_converts_units(platform):
+    cv = ColvarsCollectiveVariable(DIHEDRAL_IN_RADIANS, "phi")
+    reference = openmm.CustomTorsionForce("theta")
+    reference.addTorsion(0, 1, 2, 3, [])
+    context = make_context(make_system(4, cv, reference), make_positions(4, 2), platform)
+    energy, forces = energy_and_forces(context, 0)
+    expected_energy, expected_forces = energy_and_forces(context, 1)
+    assert energy == pytest.approx(expected_energy, rel=1e-6)
+    assert forces == pytest.approx(expected_forces, rel=1e-5, abs=1e-6)
 
 def rotation_matrix(seed):
     rng = np.random.default_rng(seed)
@@ -117,8 +135,8 @@ def rotation_matrix(seed):
 
 def orientation_angle(reference):
     ref_positions = "\n".join(
-        f"      ({x / ANGSTROM_TO_NM:.10f}, {y / ANGSTROM_TO_NM:.10f}, "
-        f"{z / ANGSTROM_TO_NM:.10f})"
+        f"      ({x * NM_TO_ANGSTROM:.10f}, {y * NM_TO_ANGSTROM:.10f}, "
+        f"{z * NM_TO_ANGSTROM:.10f})"
         for x, y, z in reference
     )
     component = (
@@ -149,9 +167,7 @@ def test_orientation_angle_forces_are_minus_gradient(platform):
     rotation, _ = rotation_matrix(4)
     center = reference.mean(axis=0)
     positions = (reference - center) @ rotation.T + center
-    cv = ColvarsCollectiveVariable(
-        orientation_angle(reference), "omega", DEGREES_TO_RADIANS
-    )
+    cv = ColvarsCollectiveVariable(orientation_angle(reference), "omega")
     context = make_context(make_system(6, cv), positions, platform)
     _, forces = energy_and_forces(context, 0)
     rng = np.random.default_rng(5)
@@ -168,10 +184,9 @@ def test_orientation_angle_forces_are_minus_gradient(platform):
 
 
 def test_getters_and_validation():
-    cv = ColvarsCollectiveVariable(colvar_config("d", DISTANCE), "d", 2.0)
+    cv = ColvarsCollectiveVariable(colvar_config("d", DISTANCE), "d")
     assert cv.getConfigString() == colvar_config("d", DISTANCE)
     assert cv.getColvarName() == "d"
-    assert cv.getValueScale() == 2.0
     assert not cv.usesPeriodicBoundaryConditions()
     cv.setUsesPeriodicBoundaryConditions(True)
     assert cv.usesPeriodicBoundaryConditions()
@@ -179,24 +194,19 @@ def test_getters_and_validation():
         ColvarsCollectiveVariable("", "d")
     with pytest.raises(openmm.OpenMMException, match="colvarName"):
         ColvarsCollectiveVariable(colvar_config("d", DISTANCE), "")
-    with pytest.raises(openmm.OpenMMException, match="finite"):
-        ColvarsCollectiveVariable(colvar_config("d", DISTANCE), "d", float("nan"))
 
 
 def assert_same_settings(copy_, original):
     assert isinstance(copy_, ColvarsCollectiveVariable)
     assert copy_.getConfigString() == original.getConfigString()
     assert copy_.getColvarName() == original.getColvarName()
-    assert copy_.getValueScale() == original.getValueScale()
     assert copy_.usesPeriodicBoundaryConditions() == original.usesPeriodicBoundaryConditions()
     assert copy_.getForceGroup() == original.getForceGroup()
     assert copy_.getName() == original.getName()
 
 
 def configured_cv():
-    cv = ColvarsCollectiveVariable(
-        colvar_config("phi", DIHEDRAL), "phi", DEGREES_TO_RADIANS
-    )
+    cv = ColvarsCollectiveVariable(colvar_config("phi", DIHEDRAL), "phi")
     cv.setForceGroup(7)
     cv.setName("phi_colvars")
     cv.setUsesPeriodicBoundaryConditions(True)
@@ -243,10 +253,9 @@ def test_system_with_the_force_can_be_copied_and_serialized():
 
 @pytest.mark.parametrize("platform", PLATFORMS)
 def test_inside_a_custom_cv_force(platform):
-    # A periodic harmonic coupling of a Colvars dihedral with an OpenMM distance
-    phi = ColvarsCollectiveVariable(
-        colvar_config("phi", DIHEDRAL), "phi", DEGREES_TO_RADIANS
-    )
+    # A periodic harmonic coupling of a Colvars dihedral in radians with an OpenMM
+    # distance
+    phi = ColvarsCollectiveVariable(DIHEDRAL_IN_RADIANS, "phi")
     distance = openmm.CustomBondForce("r")
     distance.addBond(0, 3, [])
     expression = "0.5*k*dphi^2 + d; dphi = phi - phi0 - 2*pi*floor((phi - phi0)/(2*pi) + 0.5)"

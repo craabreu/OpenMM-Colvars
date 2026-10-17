@@ -25,12 +25,11 @@ class OpenMMColvarProxy final : public colvarproxy {
 public:
     /// With an empty reportedColvar, the proxy applies the biases of the Colvars
     /// configuration and reports their energy. Otherwise, it reports the value of the
-    /// named colvar times valueScale as the energy, applies the corresponding forces,
+    /// named colvar as the energy, applies the corresponding forces,
     /// and writes no output files.
     OpenMMColvarProxy(const ColvarsForce& owner,
                       const System& system,
-                      const std::string& reportedColvar = "",
-                      double valueScale = 1.0);
+                      const std::string& reportedColvar = "");
     ~OpenMMColvarProxy() override;
 
     int setup() override;
@@ -146,7 +145,6 @@ private:
     const ColvarsForce& owner_;
     const System& system_;
     std::string reportedColvarName_;
-    double valueScale_;
     colvar* reportedColvar_;
     ContextImpl* currentContext_;
     double biasEnergyKcalPerMol_;

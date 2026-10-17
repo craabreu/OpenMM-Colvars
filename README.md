@@ -371,15 +371,12 @@ When combining `alchLambda` with TABF, call
 ### Colvars as collective variables of other forces
 
 `ColvarsCollectiveVariable` turns one colvar into an OpenMM force: its energy is
-the colvar's value times `valueScale`, and its forces are minus the gradient of
-that energy. Unlike `ColvarsForce`, it can be serialized, so it can be a
+the colvar's value, and its forces are minus the gradient of that value. Unlike `ColvarsForce`, it can be serialized, so it can be a
 collective variable of a `CustomCVForce` and can be copied, pickled, or saved in
 a serialized `System`. This makes Colvars components available to OpenMM tools
 built on `CustomCVForce`.
 
 ```python
-import math
-
 import openmm
 from openmm_colvars import ColvarsCollectiveVariable
 
@@ -395,22 +392,23 @@ colvar {
 }
 """
 
-# Colvars reports angles in degrees; scale the value to radians
-phi = ColvarsCollectiveVariable(config, "phi", math.pi / 180)
+phi = ColvarsCollectiveVariable(config, "phi")
 
+# Colvars reports the dihedral in degrees, wrapped into (-180, 180]
 restraint = openmm.CustomCVForce(
-    "0.5*k*dphi^2; dphi = phi - phi0 - 2*pi*floor((phi - phi0)/(2*pi) + 0.5)"
+    "0.5*k*dphi^2; dphi = phi - phi0 - 360*floor((phi - phi0)/360 + 0.5)"
 )
-restraint.addGlobalParameter("k", 100.0)
-restraint.addGlobalParameter("phi0", -1.2)
-restraint.addGlobalParameter("pi", math.pi)
+restraint.addGlobalParameter("k", 0.03)     # kJ/mol/degree^2
+restraint.addGlobalParameter("phi0", -70.0)  # degrees
 restraint.addCollectiveVariable("phi", phi)
 ```
 
-Use `valueScale` to convert from Colvars units, for example `0.1` for a length
-in nm or `pi/180` for an angle in radians. The value of a periodic colvar is
-reported wrapped into its period, as Colvars computes it, so the force using it
-must account for the periodicity.
+The value is in Colvars units: Angstrom for lengths and degrees for angles. A
+tool that expects OpenMM units can get them from a `customFunction` colvar, for
+example `customFunction phi*0.017453292519943295` with the dihedral as its
+component, for an angle in radians. The value of a periodic colvar is reported
+wrapped into its period, as Colvars computes it, so the force using it must
+account for the periodicity.
 
 The configuration may define other colvars, for example as components of a
 `customFunction`, but it must not define biases, and the reported colvar must be

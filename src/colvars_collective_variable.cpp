@@ -8,7 +8,6 @@
 #include "openmm/serialization/SerializationProxy.h"
 
 #include <algorithm>
-#include <cmath>
 #include <typeinfo>
 
 using namespace OpenMM;
@@ -44,7 +43,6 @@ public:
         node.setStringProperty("name", force.getName());
         node.setStringProperty("configString", force.getConfigString());
         node.setStringProperty("colvarName", force.getColvarName());
-        node.setDoubleProperty("valueScale", force.getValueScale());
         node.setBoolProperty("usesPeriodic", force.usesPeriodicBoundaryConditions());
     }
 
@@ -54,8 +52,7 @@ public:
             throw OpenMMException("Unsupported version number");
         }
         auto* force = new ColvarsCollectiveVariable(node.getStringProperty("configString"),
-                                                    node.getStringProperty("colvarName"),
-                                                    node.getDoubleProperty("valueScale"));
+                                                    node.getStringProperty("colvarName"));
         force->setForceGroup(node.getIntProperty("forceGroup", 0));
         force->setName(node.getStringProperty("name", force->getName()));
         force->setUsesPeriodicBoundaryConditions(node.getBoolProperty("usesPeriodic", false));
@@ -73,18 +70,11 @@ public:
 } // namespace
 
 ColvarsCollectiveVariable::ColvarsCollectiveVariable(const std::string& configString,
-                                                     const std::string& colvarName,
-                                                     double valueScale)
-    : configString_(configString),
-      colvarName_(colvarName),
-      valueScale_(valueScale),
-      usesPbc_(false)
+                                                     const std::string& colvarName)
+    : configString_(configString), colvarName_(colvarName), usesPbc_(false)
 {
     validate_nonempty(configString_, "configString");
     validate_nonempty(colvarName_, "colvarName");
-    if (!std::isfinite(valueScale_)) {
-        throw OpenMMException("ColvarsCollectiveVariable: valueScale must be finite");
-    }
     setName("ColvarsCollectiveVariable");
 }
 
@@ -96,11 +86,6 @@ const std::string& ColvarsCollectiveVariable::getConfigString() const
 const std::string& ColvarsCollectiveVariable::getColvarName() const
 {
     return colvarName_;
-}
-
-double ColvarsCollectiveVariable::getValueScale() const
-{
-    return valueScale_;
 }
 
 bool ColvarsCollectiveVariable::usesPeriodicBoundaryConditions() const
@@ -142,7 +127,7 @@ void ColvarsCollectiveVariableImpl::initialize(ContextImpl& context)
     }
     CustomCPPForceImpl::initialize(context);
     proxy_ = std::make_unique<OpenMMColvarProxy>(
-        settings_, context.getSystem(), owner_.getColvarName(), owner_.getValueScale());
+        settings_, context.getSystem(), owner_.getColvarName());
 }
 
 double ColvarsCollectiveVariableImpl::computeForce(ContextImpl& context,

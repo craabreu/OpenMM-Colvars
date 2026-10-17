@@ -392,12 +392,10 @@ bool config_tabf_alpha_boundaries(const std::string& configText,
 
 OpenMMColvarProxy::OpenMMColvarProxy(const ColvarsForce& owner,
                                      const System& system,
-                                     const std::string& reportedColvar,
-                                     double valueScale)
+                                     const std::string& reportedColvar)
     : owner_(owner),
       system_(system),
       reportedColvarName_(reportedColvar),
-      valueScale_(valueScale),
       reportedColvar_(nullptr),
       currentContext_(nullptr),
       biasEnergyKcalPerMol_(0.0),
@@ -978,9 +976,9 @@ int OpenMMColvarProxy::replica_comm_send(char*, int, int)
 int OpenMMColvarProxy::run_force_callback()
 {
     if (reportedColvar_ != nullptr) {
-        // Energy valueScale*x and generalized force -valueScale on the colvar, both
-        // in Colvars energy units, which this proxy converts to kJ/mol
-        const cvm::real scale = colvars_units::kj_per_mol_to_kcal_per_mol(valueScale_);
+        // Energy x and generalized force -1 on the colvar, in kJ/mol per colvar
+        // unit, converted to the Colvars energy unit; the proxy converts back
+        const cvm::real scale = colvars_units::kj_per_mol_to_kcal_per_mol(1.0);
         add_energy(scale * reportedColvar_->value().real_value);
         reportedColvar_->add_bias_force(colvarvalue(-scale));
         return COLVARS_OK;
